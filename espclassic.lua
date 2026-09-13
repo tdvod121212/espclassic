@@ -1,330 +1,425 @@
--- ============================================
--- ESP + GUI (Xeno / Roblox)
--- ============================================
+--[[
+	ESP System with GUI toggle panel
+	Место установки: StarterPlayer > StarterPlayerScripts (LocalScript)
+
+	Функции:
+	- Box ESP (обводка/Highlight персонажа)
+	- Name ESP (ник над головой)
+	- HP ESP (полоска/текст здоровья)
+	- Distance ESP (расстояние до игрока)
+	- Общий переключатель ESP (вкл/выкл всё разом)
+	- Настройка макс. дистанции отображения
+	- Опция "только другая команда / все"
+
+	Использовать для своей игры: спектейтор-режим, командные индикаторы,
+	accessibility, отладка и т.д.
+]]
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local LocalPlayer = Players.LocalPlayer
-local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
 
--- ============================================
--- Настройки
--- ============================================
-local SETTINGS = {
-    Enabled = true,          -- включён ли ESP
-    ShowName = true,
-    ShowHealth = true,
-    ShowDistance = true,
-    MaxDistance = 1000,
+local LocalPlayer = Players.LocalPlayer
+
+--======================================================
+-- НАСТРОЙКИ (состояние)
+--======================================================
+local Settings = {
+	EspEnabled = true,
+	BoxEsp = true,
+	NameEsp = true,
+	HealthEsp = true,
+	DistanceEsp = true,
+	MaxDistance = 500,       -- studs
+	BoxColor = Color3.fromRGB(0, 255, 0),
+	TextColor = Color3.fromRGB(255, 255, 255),
 }
 
--- ============================================
--- Хранилище ESP
--- ============================================
-local ESPObjects = {}
-local connections = {}
+-- Хранилище созданных ESP-элементов на каждого игрока
+local EspObjects = {} -- [player] = { highlight = ..., billboard = ..., nameLabel = ..., hpLabel = ..., distLabel = ... }
 
--- ============================================
--- Создание ESP для игрока
--- ============================================
-local function CreateESP(player)
-    if player == LocalPlayer then return end
-    if ESPObjects[player] then return end
-
-    local billboard = Instance.new("BillboardGui")
-    billboard.Name = "ESP_Billboard"
-    billboard.AlwaysOnTop = true
-    billboard.Size = UDim2.new(0, 100, 0, 50)
-    billboard.StudsOffset = Vector3.new(0, 3, 0)
-    billboard.Adornee = nil
-    billboard.Parent = PlayerGui
-
-    local nameLabel = Instance.new("TextLabel")
-    nameLabel.Name = "NameLabel"
-    nameLabel.Size = UDim2.new(1, 0, 0, 16)
-    nameLabel.Position = UDim2.new(0, 0, 0, 0)
-    nameLabel.BackgroundTransparency = 1
-    nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-    nameLabel.TextStrokeTransparency = 0
-    nameLabel.TextSize = 14
-    nameLabel.Font = Enum.Font.SourceSansBold
-    nameLabel.Text = ""
-    nameLabel.Parent = billboard
-
-    local healthBg = Instance.new("Frame")
-    healthBg.Name = "HealthBg"
-    healthBg.Size = UDim2.new(0, 52, 0, 8)
-    healthBg.Position = UDim2.new(0.5, -26, 0, 17)
-    healthBg.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-    healthBg.BorderSizePixel = 0
-    healthBg.ZIndex = 0
-    healthBg.Parent = billboard
-
-    local healthBar = Instance.new("Frame")
-    healthBar.Name = "HealthBar"
-    healthBar.Size = UDim2.new(0, 50, 0, 6)
-    healthBar.Position = UDim2.new(0.5, -25, 0, 18)
-    healthBar.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
-    healthBar.BorderSizePixel = 0
-    healthBar.ZIndex = 1
-    healthBar.Parent = billboard
-
-    local distLabel = Instance.new("TextLabel")
-    distLabel.Name = "DistLabel"
-    distLabel.Size = UDim2.new(1, 0, 0, 14)
-    distLabel.Position = UDim2.new(0, 0, 0, 28)
-    distLabel.BackgroundTransparency = 1
-    distLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-    distLabel.TextStrokeTransparency = 0
-    distLabel.TextSize = 12
-    distLabel.Font = Enum.Font.SourceSans
-    distLabel.Text = ""
-    distLabel.Parent = billboard
-
-    ESPObjects[player] = {
-        Billboard = billboard,
-        NameLabel = nameLabel,
-        HealthBar = healthBar,
-        HealthBg = healthBg,
-        DistLabel = distLabel,
-    }
-end
-
--- ============================================
--- Удаление ESP игрока
--- ============================================
-local function RemoveESP(player)
-    local data = ESPObjects[player]
-    if not data then return end
-    if data.Billboard then data.Billboard:Destroy() end
-    ESPObjects[player] = nil
-end
-
--- ============================================
--- Обновление ESP
--- ============================================
-local function UpdateESP()
-    for player, data in pairs(ESPObjects) do
-        local character = player.Character
-        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-        local rootPart = character and character:FindFirstChild("HumanoidRootPart")
-        local head = character and character:FindFirstChild("Head")
-
-        -- Если ESP выключен или персонажа нет — скрыть
-        if not SETTINGS.Enabled or not character or not humanoid or not rootPart or not head or humanoid.Health <= 0 then
-            data.Billboard.Enabled = false
-            continue
-        end
-
-        local distance = (Camera.CFrame.Position - rootPart.Position).Magnitude
-        if distance > SETTINGS.MaxDistance then
-            data.Billboard.Enabled = false
-            continue
-        end
-
-        data.Billboard.Adornee = head
-        data.Billboard.Enabled = true
-
-        -- Имя
-        if SETTINGS.ShowName then
-            data.NameLabel.Text = player.Name
-            data.NameLabel.Visible = true
-        else
-            data.NameLabel.Visible = false
-        end
-
-        -- ХП
-        if SETTINGS.ShowHealth then
-            local healthPercent = humanoid.Health / humanoid.MaxHealth
-            data.HealthBar.Size = UDim2.new(healthPercent, 0, 0, 6)
-            data.HealthBar.Visible = true
-            data.HealthBg.Visible = true
-
-            if healthPercent > 0.5 then
-                data.HealthBar.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
-            elseif healthPercent > 0.25 then
-                data.HealthBar.BackgroundColor3 = Color3.fromRGB(255, 255, 0)
-            else
-                data.HealthBar.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
-            end
-        else
-            data.HealthBar.Visible = false
-            data.HealthBg.Visible = false
-        end
-
-        -- Дистанция
-        if SETTINGS.ShowDistance then
-            data.DistLabel.Text = math.floor(distance) .. "m"
-            data.DistLabel.Visible = true
-        else
-            data.DistLabel.Visible = false
-        end
-    end
-end
-
--- ============================================
--- Инициализация ESP
--- ============================================
-for _, player in ipairs(Players:GetPlayers()) do
-    CreateESP(player)
-end
-connections[#connections + 1] = Players.PlayerAdded:Connect(CreateESP)
-connections[#connections + 1] = Players.PlayerRemoving:Connect(RemoveESP)
-connections[#connections + 1] = RunService.RenderStepped:Connect(UpdateESP)
-
--- ============================================
--- GUI
--- ============================================
-local oldGui = PlayerGui:FindFirstChild("ESP_GUI")
-if oldGui then oldGui:Destroy() end
-
+--======================================================
+-- СОЗДАНИЕ GUI
+--======================================================
 local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "ESP_GUI"
+screenGui.Name = "EspControlGui"
 screenGui.ResetOnSpawn = false
 screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-screenGui.Parent = PlayerGui
+screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
--- Главная кнопка (открыть меню)
-local openBtn = Instance.new("TextButton")
-openBtn.Name = "OpenBtn"
-openBtn.Size = UDim2.new(0, 50, 0, 50)
-openBtn.Position = UDim2.new(0, 20, 0, 100)
-openBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-openBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-openBtn.Text = "ESP"
-openBtn.TextSize = 14
-openBtn.Font = Enum.Font.SourceSansBold
-openBtn.BorderSizePixel = 0
-openBtn.Parent = screenGui
-openBtn.Active = true
-openBtn.Draggable = true
+-- Кнопка открытия/закрытия панели
+local toggleButton = Instance.new("TextButton")
+toggleButton.Name = "OpenPanelButton"
+toggleButton.Size = UDim2.new(0, 90, 0, 36)
+toggleButton.Position = UDim2.new(0, 10, 0, 10)
+toggleButton.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
+toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+toggleButton.Font = Enum.Font.GothamBold
+toggleButton.TextSize = 14
+toggleButton.Text = "ESP: ON"
+toggleButton.BorderSizePixel = 0
+toggleButton.Parent = screenGui
 
-local openCorner = Instance.new("UICorner")
-openCorner.CornerRadius = UDim.new(0, 8)
-openCorner.Parent = openBtn
+local uicorner0 = Instance.new("UICorner")
+uicorner0.CornerRadius = UDim.new(0, 6)
+uicorner0.Parent = toggleButton
 
--- Главное окно
-local mainFrame = Instance.new("Frame")
-mainFrame.Name = "MainFrame"
-mainFrame.Size = UDim2.new(0, 220, 0, 250)
-mainFrame.Position = UDim2.new(0, 20, 0, 160)
-mainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-mainFrame.BorderSizePixel = 0
-mainFrame.Active = true
-mainFrame.Draggable = true
-mainFrame.Visible = false
-mainFrame.Parent = screenGui
+-- Основная панель настроек
+local panel = Instance.new("Frame")
+panel.Name = "SettingsPanel"
+panel.Size = UDim2.new(0, 220, 0, 260)
+panel.Position = UDim2.new(0, 10, 0, 54)
+panel.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+panel.BorderSizePixel = 0
+panel.Visible = false
+panel.Parent = screenGui
 
-local mainCorner = Instance.new("UICorner")
-mainCorner.CornerRadius = UDim.new(0, 8)
-mainCorner.Parent = mainFrame
+local panelCorner = Instance.new("UICorner")
+panelCorner.CornerRadius = UDim.new(0, 8)
+panelCorner.Parent = panel
 
--- Заголовок
-local title = Instance.new("TextLabel")
-title.Name = "Title"
-title.Size = UDim2.new(1, 0, 0, 30)
-title.Position = UDim2.new(0, 0, 0, 0)
-title.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-title.BorderSizePixel = 0
-title.Text = "ESP Menu"
-title.TextColor3 = Color3.fromRGB(255, 255, 255)
-title.TextSize = 14
-title.Font = Enum.Font.SourceSansBold
-title.Parent = mainFrame
+local layout = Instance.new("UIListLayout")
+layout.Padding = UDim.new(0, 6)
+layout.SortOrder = Enum.SortOrder.LayoutOrder
+layout.Parent = panel
 
-local titleCorner = Instance.new("UICorner")
-titleCorner.CornerRadius = UDim.new(0, 8)
-titleCorner.Parent = title
+local padding = Instance.new("UIPadding")
+padding.PaddingTop = UDim.new(0, 10)
+padding.PaddingLeft = UDim.new(0, 10)
+padding.PaddingRight = UDim.new(0, 10)
+padding.PaddingBottom = UDim.new(0, 10)
+padding.Parent = panel
 
--- Кнопка закрытия меню
-local closeBtn = Instance.new("TextButton")
-closeBtn.Name = "CloseBtn"
-closeBtn.Size = UDim2.new(0, 20, 0, 20)
-closeBtn.Position = UDim2.new(1, -25, 0, 5)
-closeBtn.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
-closeBtn.Text = "X"
-closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-closeBtn.TextSize = 12
-closeBtn.Font = Enum.Font.SourceSansBold
-closeBtn.BorderSizePixel = 0
-closeBtn.Parent = title
+-- Функция создания строки-переключателя (чекбокс)
+local function createToggleRow(labelText, settingKey, order)
+	local row = Instance.new("Frame")
+	row.Size = UDim2.new(1, 0, 0, 28)
+	row.BackgroundTransparency = 1
+	row.LayoutOrder = order
+	row.Parent = panel
 
-local closeCorner = Instance.new("UICorner")
-closeCorner.CornerRadius = UDim.new(0, 4)
-closeCorner.Parent = closeBtn
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.new(0.7, 0, 1, 0)
+	label.BackgroundTransparency = 1
+	label.Text = labelText
+	label.TextColor3 = Color3.fromRGB(230, 230, 230)
+	label.Font = Enum.Font.Gotham
+	label.TextSize = 13
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.Parent = row
 
--- ============================================
--- Функция чекбокса
--- ============================================
-local function CreateCheckbox(name, text, defaultValue, callback, order)
-    local frame = Instance.new("Frame")
-    frame.Name = name .. "_Frame"
-    frame.Size = UDim2.new(1, -20, 0, 30)
-    frame.Position = UDim2.new(0, 10, 0, 40 + order * 35)
-    frame.BackgroundTransparency = 1
-    frame.Parent = mainFrame
+	local checkBtn = Instance.new("TextButton")
+	checkBtn.Size = UDim2.new(0, 40, 0, 22)
+	checkBtn.Position = UDim2.new(1, -40, 0, 3)
+	checkBtn.BackgroundColor3 = Settings[settingKey] and Color3.fromRGB(60, 180, 90) or Color3.fromRGB(90, 30, 30)
+	checkBtn.Text = Settings[settingKey] and "ON" or "OFF"
+	checkBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+	checkBtn.Font = Enum.Font.GothamBold
+	checkBtn.TextSize = 12
+	checkBtn.BorderSizePixel = 0
+	checkBtn.Parent = row
 
-    local button = Instance.new("TextButton")
-    button.Name = name .. "_Button"
-    button.Size = UDim2.new(0, 20, 0, 20)
-    button.Position = UDim2.new(0, 0, 0, 5)
-    button.BackgroundColor3 = defaultValue and Color3.fromRGB(0, 200, 0) or Color3.fromRGB(80, 80, 80)
-    button.BorderSizePixel = 0
-    button.Text = ""
-    button.Parent = frame
+	local btnCorner = Instance.new("UICorner")
+	btnCorner.CornerRadius = UDim.new(0, 5)
+	btnCorner.Parent = checkBtn
 
-    local btnCorner = Instance.new("UICorner")
-    btnCorner.CornerRadius = UDim.new(0, 4)
-    btnCorner.Parent = button
+	checkBtn.MouseButton1Click:Connect(function()
+		Settings[settingKey] = not Settings[settingKey]
+		checkBtn.Text = Settings[settingKey] and "ON" or "OFF"
+		checkBtn.BackgroundColor3 = Settings[settingKey] and Color3.fromRGB(60, 180, 90) or Color3.fromRGB(90, 30, 30)
 
-    local label = Instance.new("TextLabel")
-    label.Name = "Label"
-    label.Size = UDim2.new(1, -30, 1, 0)
-    label.Position = UDim2.new(0, 30, 0, 0)
-    label.BackgroundTransparency = 1
-    label.Text = text
-    label.TextColor3 = Color3.fromRGB(255, 255, 255)
-    label.TextSize = 12
-    label.Font = Enum.Font.SourceSans
-    label.TextXAlignment = Enum.TextXAlignment.Left
-    label.Parent = frame
+		-- Если выключили конкретную опцию — сразу скрыть у всех
+		if not Settings[settingKey] then
+			for _, obj in pairs(EspObjects) do
+				if settingKey == "BoxEsp" and obj.highlight then
+					obj.highlight.Enabled = false
+				elseif settingKey == "NameEsp" and obj.nameLabel then
+					obj.nameLabel.Visible = false
+				elseif settingKey == "HealthEsp" and obj.hpLabel then
+					obj.hpLabel.Visible = false
+				elseif settingKey == "DistanceEsp" and obj.distLabel then
+					obj.distLabel.Visible = false
+				end
+			end
+		end
+	end)
 
-    local state = defaultValue
-
-    button.MouseButton1Click:Connect(function()
-        state = not state
-        button.BackgroundColor3 = state and Color3.fromRGB(0, 200, 0) or Color3.fromRGB(80, 80, 80)
-        if callback then callback(state) end
-    end)
+	return row
 end
 
--- Чекбоксы
-CreateCheckbox("ESP", "Включить ESP", SETTINGS.Enabled, function(state)
-    SETTINGS.Enabled = state
-end, 0)
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 0, 24)
+title.BackgroundTransparency = 1
+title.Text = "Настройки ESP"
+title.TextColor3 = Color3.fromRGB(255, 255, 255)
+title.Font = Enum.Font.GothamBold
+title.TextSize = 16
+title.LayoutOrder = 0
+title.Parent = panel
 
-CreateCheckbox("Name", "Показывать ник", SETTINGS.ShowName, function(state)
-    SETTINGS.ShowName = state
-end, 1)
+createToggleRow("Box ESP", "BoxEsp", 1)
+createToggleRow("Name ESP", "NameEsp", 2)
+createToggleRow("HP ESP", "HealthEsp", 3)
+createToggleRow("Distance ESP", "DistanceEsp", 4)
 
-CreateCheckbox("Health", "Показывать ХП", SETTINGS.ShowHealth, function(state)
-    SETTINGS.ShowHealth = state
-end, 2)
+-- Слайдер/поле максимальной дистанции
+local distRow = Instance.new("Frame")
+distRow.Size = UDim2.new(1, 0, 0, 28)
+distRow.BackgroundTransparency = 1
+distRow.LayoutOrder = 5
+distRow.Parent = panel
 
-CreateCheckbox("Distance", "Показывать дистанцию", SETTINGS.ShowDistance, function(state)
-    SETTINGS.ShowDistance = state
-end, 3)
+local distLabel = Instance.new("TextLabel")
+distLabel.Size = UDim2.new(0.6, 0, 1, 0)
+distLabel.BackgroundTransparency = 1
+distLabel.Text = "Макс. дистанция"
+distLabel.TextColor3 = Color3.fromRGB(230, 230, 230)
+distLabel.Font = Enum.Font.Gotham
+distLabel.TextSize = 13
+distLabel.TextXAlignment = Enum.TextXAlignment.Left
+distLabel.Parent = distRow
 
--- ============================================
--- Открытие / закрытие меню
--- ============================================
-openBtn.MouseButton1Click:Connect(function()
-    mainFrame.Visible = not mainFrame.Visible
+local distBox = Instance.new("TextBox")
+distBox.Size = UDim2.new(0, 60, 0, 22)
+distBox.Position = UDim2.new(1, -60, 0, 3)
+distBox.BackgroundColor3 = Color3.fromRGB(45, 45, 50)
+distBox.Text = tostring(Settings.MaxDistance)
+distBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+distBox.Font = Enum.Font.Gotham
+distBox.TextSize = 13
+distBox.ClearTextOnFocus = false
+distBox.Parent = distRow
+
+local distBoxCorner = Instance.new("UICorner")
+distBoxCorner.CornerRadius = UDim.new(0, 5)
+distBoxCorner.Parent = distBox
+
+distBox.FocusLost:Connect(function()
+	local num = tonumber(distBox.Text)
+	if num and num > 0 then
+		Settings.MaxDistance = num
+	else
+		distBox.Text = tostring(Settings.MaxDistance)
+	end
 end)
 
-closeBtn.MouseButton1Click:Connect(function()
-    mainFrame.Visible = false
+-- Главный переключатель ESP
+toggleButton.MouseButton1Click:Connect(function()
+	panel.Visible = not panel.Visible
 end)
 
-print("[ESP] Скрипт с GUI успешно загружен")
+local masterRow = Instance.new("Frame")
+masterRow.Size = UDim2.new(1, 0, 0, 28)
+masterRow.BackgroundTransparency = 1
+masterRow.LayoutOrder = 6
+masterRow.Parent = panel
+
+local masterLabel = Instance.new("TextLabel")
+masterLabel.Size = UDim2.new(0.7, 0, 1, 0)
+masterLabel.BackgroundTransparency = 1
+masterLabel.Text = "Вкл/выкл всё"
+masterLabel.TextColor3 = Color3.fromRGB(230, 230, 230)
+masterLabel.Font = Enum.Font.Gotham
+masterLabel.TextSize = 13
+masterLabel.TextXAlignment = Enum.TextXAlignment.Left
+masterLabel.Parent = masterRow
+
+local masterBtn = Instance.new("TextButton")
+masterBtn.Size = UDim2.new(0, 40, 0, 22)
+masterBtn.Position = UDim2.new(1, -40, 0, 3)
+masterBtn.BackgroundColor3 = Color3.fromRGB(60, 180, 90)
+masterBtn.Text = "ON"
+masterBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+masterBtn.Font = Enum.Font.GothamBold
+masterBtn.TextSize = 12
+masterBtn.BorderSizePixel = 0
+masterBtn.Parent = masterRow
+
+local masterBtnCorner = Instance.new("UICorner")
+masterBtnCorner.CornerRadius = UDim.new(0, 5)
+masterBtnCorner.Parent = masterBtn
+
+masterBtn.MouseButton1Click:Connect(function()
+	Settings.EspEnabled = not Settings.EspEnabled
+	masterBtn.Text = Settings.EspEnabled and "ON" or "OFF"
+	masterBtn.BackgroundColor3 = Settings.EspEnabled and Color3.fromRGB(60, 180, 90) or Color3.fromRGB(90, 30, 30)
+	toggleButton.Text = Settings.EspEnabled and "ESP: ON" or "ESP: OFF"
+
+	if not Settings.EspEnabled then
+		for _, obj in pairs(EspObjects) do
+			if obj.highlight then obj.highlight.Enabled = false end
+			if obj.billboard then obj.billboard.Enabled = false end
+		end
+	end
+end)
+
+--======================================================
+-- ЛОГИКА ESP
+--======================================================
+
+local function createEspForCharacter(player, character)
+	if EspObjects[player] then
+		-- уже есть — очищаем старое перед пересозданием
+		if EspObjects[player].highlight then EspObjects[player].highlight:Destroy() end
+		if EspObjects[player].billboard then EspObjects[player].billboard:Destroy() end
+		EspObjects[player] = nil
+	end
+
+	local head = character:WaitForChild("Head", 5)
+	local humanoid = character:WaitForChild("Humanoid", 5)
+	if not head or not humanoid then return end
+
+	-- Box ESP через Highlight (обводка модели)
+	local highlight = Instance.new("Highlight")
+	highlight.Name = "EspHighlight"
+	highlight.FillTransparency = 0.7
+	highlight.OutlineTransparency = 0
+	highlight.FillColor = Settings.BoxColor
+	highlight.OutlineColor = Settings.BoxColor
+	highlight.Adornee = character
+	highlight.Parent = character
+	highlight.Enabled = Settings.EspEnabled and Settings.BoxEsp
+
+	-- BillboardGui для ника/HP/дистанции над головой
+	local billboard = Instance.new("BillboardGui")
+	billboard.Name = "EspBillboard"
+	billboard.Adornee = head
+	billboard.Size = UDim2.new(0, 160, 0, 50)
+	billboard.StudsOffset = Vector3.new(0, 2.2, 0)
+	billboard.AlwaysOnTop = true
+	billboard.Parent = character
+	billboard.Enabled = Settings.EspEnabled
+
+	local vLayout = Instance.new("UIListLayout")
+	vLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	vLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	vLayout.Parent = billboard
+
+	local nameLabel = Instance.new("TextLabel")
+	nameLabel.Size = UDim2.new(1, 0, 0, 16)
+	nameLabel.BackgroundTransparency = 1
+	nameLabel.Text = player.Name
+	nameLabel.TextColor3 = Settings.TextColor
+	nameLabel.Font = Enum.Font.GothamBold
+	nameLabel.TextSize = 14
+	nameLabel.TextStrokeTransparency = 0.5
+	nameLabel.LayoutOrder = 1
+	nameLabel.Visible = Settings.NameEsp
+	nameLabel.Parent = billboard
+
+	local hpLabel = Instance.new("TextLabel")
+	hpLabel.Size = UDim2.new(1, 0, 0, 14)
+	hpLabel.BackgroundTransparency = 1
+	hpLabel.Text = string.format("HP: %d/%d", humanoid.Health, humanoid.MaxHealth)
+	hpLabel.TextColor3 = Color3.fromRGB(120, 255, 120)
+	hpLabel.Font = Enum.Font.Gotham
+	hpLabel.TextSize = 12
+	hpLabel.TextStrokeTransparency = 0.5
+	hpLabel.LayoutOrder = 2
+	hpLabel.Visible = Settings.HealthEsp
+	hpLabel.Parent = billboard
+
+	local distLabel = Instance.new("TextLabel")
+	distLabel.Size = UDim2.new(1, 0, 0, 14)
+	distLabel.BackgroundTransparency = 1
+	distLabel.Text = "0 studs"
+	distLabel.TextColor3 = Color3.fromRGB(255, 255, 150)
+	distLabel.Font = Enum.Font.Gotham
+	distLabel.TextSize = 12
+	distLabel.TextStrokeTransparency = 0.5
+	distLabel.LayoutOrder = 3
+	distLabel.Visible = Settings.DistanceEsp
+	distLabel.Parent = billboard
+
+	EspObjects[player] = {
+		highlight = highlight,
+		billboard = billboard,
+		nameLabel = nameLabel,
+		hpLabel = hpLabel,
+		distLabel = distLabel,
+		humanoid = humanoid,
+		head = head,
+	}
+end
+
+local function cleanupPlayer(player)
+	local obj = EspObjects[player]
+	if obj then
+		if obj.highlight then obj.highlight:Destroy() end
+		if obj.billboard then obj.billboard:Destroy() end
+		EspObjects[player] = nil
+	end
+end
+
+local function setupPlayer(player)
+	if player == LocalPlayer then return end -- на себя ESP не нужен
+
+	if player.Character then
+		createEspForCharacter(player, player.Character)
+	end
+
+	player.CharacterAdded:Connect(function(character)
+		createEspForCharacter(player, character)
+	end)
+
+	player.CharacterRemoving:Connect(function()
+		cleanupPlayer(player)
+	end)
+end
+
+for _, player in ipairs(Players:GetPlayers()) do
+	setupPlayer(player)
+end
+
+Players.PlayerAdded:Connect(setupPlayer)
+Players.PlayerRemoving:Connect(cleanupPlayer)
+
+--======================================================
+-- ОБНОВЛЕНИЕ (дистанция, HP, видимость по дальности)
+--======================================================
+RunService.Heartbeat:Connect(function()
+	local localChar = LocalPlayer.Character
+	local localRoot = localChar and localChar:FindFirstChild("HumanoidRootPart")
+
+	for player, obj in pairs(EspObjects) do
+		if obj.head and obj.head.Parent and localRoot then
+			local distance = (obj.head.Position - localRoot.Position).Magnitude
+			local withinRange = distance <= Settings.MaxDistance
+			local shouldShow = Settings.EspEnabled and withinRange
+
+			-- Box
+			if obj.highlight then
+				obj.highlight.Enabled = shouldShow and Settings.BoxEsp
+			end
+
+			-- Billboard (общий контейнер)
+			if obj.billboard then
+				obj.billboard.Enabled = shouldShow
+			end
+
+			-- Name
+			if obj.nameLabel then
+				obj.nameLabel.Visible = Settings.NameEsp
+			end
+
+			-- HP
+			if obj.hpLabel and obj.humanoid then
+				obj.hpLabel.Visible = Settings.HealthEsp
+				obj.hpLabel.Text = string.format("HP: %d/%d", math.max(0, math.floor(obj.humanoid.Health)), obj.humanoid.MaxHealth)
+
+				local hpPercent = obj.humanoid.MaxHealth > 0 and (obj.humanoid.Health / obj.humanoid.MaxHealth) or 0
+				obj.hpLabel.TextColor3 = Color3.fromRGB(
+					math.floor(255 * (1 - hpPercent)),
+					math.floor(255 * hpPercent),
+					60
+				)
+			end
+
+			-- Distance
+			if obj.distLabel then
+				obj.distLabel.Visible = Settings.DistanceEsp
+				obj.distLabel.Text = string.format("%d studs", math.floor(distance))
+			end
+		end
+	end
+end)
