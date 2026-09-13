@@ -1,11 +1,9 @@
-lua
 -- ============================================
--- ESP + GUI (Xeno / Roblox) — исправленный
+-- ESP + GUI (Xeno / Roblox)
 -- ============================================
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
@@ -14,20 +12,21 @@ local Camera = workspace.CurrentCamera
 -- Настройки
 -- ============================================
 local SETTINGS = {
-    Enabled = true,
-    ShowBox = true,
+    Enabled = true,          -- включён ли ESP
     ShowName = true,
     ShowHealth = true,
     ShowDistance = true,
     MaxDistance = 1000,
-    BoxColor = Color3.fromRGB(0, 255, 0),
 }
 
+-- ============================================
+-- Хранилище ESP
+-- ============================================
 local ESPObjects = {}
 local connections = {}
 
 -- ============================================
--- Создание ESP
+-- Создание ESP для игрока
 -- ============================================
 local function CreateESP(player)
     if player == LocalPlayer then return end
@@ -36,32 +35,15 @@ local function CreateESP(player)
     local billboard = Instance.new("BillboardGui")
     billboard.Name = "ESP_Billboard"
     billboard.AlwaysOnTop = true
-    billboard.Size = UDim2.new(0, 100, 0, 60)
+    billboard.Size = UDim2.new(0, 100, 0, 50)
     billboard.StudsOffset = Vector3.new(0, 3, 0)
     billboard.Adornee = nil
     billboard.Parent = PlayerGui
 
-    -- Бокс (рамка)
-    local box = Instance.new("Frame")
-    box.Name = "Box"
-    box.Size = UDim2.new(1, 0, 1, 0)
-    box.Position = UDim2.new(0, 0, 0, 0)
-    box.BackgroundTransparency = 1
-    box.BorderSizePixel = 0
-    box.Visible = false
-    box.Parent = billboard
-
-    local boxStroke = Instance.new("UIStroke")
-    boxStroke.Name = "BoxStroke"
-    boxStroke.Color = SETTINGS.BoxColor
-    boxStroke.Thickness = 1.5
-    boxStroke.Parent = box
-
-    -- Ник
     local nameLabel = Instance.new("TextLabel")
     nameLabel.Name = "NameLabel"
     nameLabel.Size = UDim2.new(1, 0, 0, 16)
-    nameLabel.Position = UDim2.new(0, 0, 0, -18)
+    nameLabel.Position = UDim2.new(0, 0, 0, 0)
     nameLabel.BackgroundTransparency = 1
     nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
     nameLabel.TextStrokeTransparency = 0
@@ -70,29 +52,28 @@ local function CreateESP(player)
     nameLabel.Text = ""
     nameLabel.Parent = billboard
 
-    -- Фон ХП
     local healthBg = Instance.new("Frame")
     healthBg.Name = "HealthBg"
-    healthBg.Size = UDim2.new(0, 60, 0, 6)
-    healthBg.Position = UDim2.new(0.5, -30, 0, 2)
+    healthBg.Size = UDim2.new(0, 52, 0, 8)
+    healthBg.Position = UDim2.new(0.5, -26, 0, 17)
     healthBg.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
     healthBg.BorderSizePixel = 0
+    healthBg.ZIndex = 0
     healthBg.Parent = billboard
 
-    -- Полоска ХП (привязана к левому краю фона, меняется ширина)
     local healthBar = Instance.new("Frame")
     healthBar.Name = "HealthBar"
-    healthBar.Size = UDim2.new(1, 0, 1, 0) -- изначально на весь фон
-    healthBar.Position = UDim2.new(0, 0, 0, 0)
+    healthBar.Size = UDim2.new(0, 50, 0, 6)
+    healthBar.Position = UDim2.new(0.5, -25, 0, 18)
     healthBar.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
     healthBar.BorderSizePixel = 0
-    healthBar.Parent = healthBg
+    healthBar.ZIndex = 1
+    healthBar.Parent = billboard
 
-    -- Дистанция
     local distLabel = Instance.new("TextLabel")
     distLabel.Name = "DistLabel"
     distLabel.Size = UDim2.new(1, 0, 0, 14)
-    distLabel.Position = UDim2.new(0, 0, 0, 10)
+    distLabel.Position = UDim2.new(0, 0, 0, 28)
     distLabel.BackgroundTransparency = 1
     distLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
     distLabel.TextStrokeTransparency = 0
@@ -103,7 +84,6 @@ local function CreateESP(player)
 
     ESPObjects[player] = {
         Billboard = billboard,
-        Box = box,
         NameLabel = nameLabel,
         HealthBar = healthBar,
         HealthBg = healthBg,
@@ -112,7 +92,7 @@ local function CreateESP(player)
 end
 
 -- ============================================
--- Удаление ESP
+-- Удаление ESP игрока
 -- ============================================
 local function RemoveESP(player)
     local data = ESPObjects[player]
@@ -131,6 +111,7 @@ local function UpdateESP()
         local rootPart = character and character:FindFirstChild("HumanoidRootPart")
         local head = character and character:FindFirstChild("Head")
 
+        -- Если ESP выключен или персонажа нет — скрыть
         if not SETTINGS.Enabled or not character or not humanoid or not rootPart or not head or humanoid.Health <= 0 then
             data.Billboard.Enabled = false
             continue
@@ -145,14 +126,7 @@ local function UpdateESP()
         data.Billboard.Adornee = head
         data.Billboard.Enabled = true
 
-        -- Бокс
-        if SETTINGS.ShowBox then
-            data.Box.Visible = true
-        else
-            data.Box.Visible = false
-        end
-
-        -- Ник
+        -- Имя
         if SETTINGS.ShowName then
             data.NameLabel.Text = player.Name
             data.NameLabel.Visible = true
@@ -162,10 +136,8 @@ local function UpdateESP()
 
         -- ХП
         if SETTINGS.ShowHealth then
-            local healthPercent = math.clamp(humanoid.Health / humanoid.MaxHealth, 0, 1)
-            -- Меняем ширину от 0 до 100% относительно фона
-            data.HealthBar.Size = UDim2.new(healthPercent, 0, 1, 0)
-            data.HealthBar.Position = UDim2.new(0, 0, 0, 0)
+            local healthPercent = humanoid.Health / humanoid.MaxHealth
+            data.HealthBar.Size = UDim2.new(healthPercent, 0, 0, 6)
             data.HealthBar.Visible = true
             data.HealthBg.Visible = true
 
@@ -192,7 +164,7 @@ local function UpdateESP()
 end
 
 -- ============================================
--- Инициализация
+-- Инициализация ESP
 -- ============================================
 for _, player in ipairs(Players:GetPlayers()) do
     CreateESP(player)
@@ -224,9 +196,9 @@ openBtn.Text = "ESP"
 openBtn.TextSize = 14
 openBtn.Font = Enum.Font.SourceSansBold
 openBtn.BorderSizePixel = 0
+openBtn.Parent = screenGui
 openBtn.Active = true
 openBtn.Draggable = true
-openBtn.Parent = screenGui
 
 local openCorner = Instance.new("UICorner")
 openCorner.CornerRadius = UDim.new(0, 8)
@@ -235,7 +207,7 @@ openCorner.Parent = openBtn
 -- Главное окно
 local mainFrame = Instance.new("Frame")
 mainFrame.Name = "MainFrame"
-mainFrame.Size = UDim2.new(0, 220, 0, 280)
+mainFrame.Size = UDim2.new(0, 220, 0, 250)
 mainFrame.Position = UDim2.new(0, 20, 0, 160)
 mainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 mainFrame.BorderSizePixel = 0
@@ -255,9 +227,9 @@ title.Size = UDim2.new(1, 0, 0, 30)
 title.Position = UDim2.new(0, 0, 0, 0)
 title.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
 title.BorderSizePixel = 0
-title.Text = "ESP Menu (X — toggle)"
+title.Text = "ESP Menu"
 title.TextColor3 = Color3.fromRGB(255, 255, 255)
-title.TextSize = 12
+title.TextSize = 14
 title.Font = Enum.Font.SourceSansBold
 title.Parent = mainFrame
 
@@ -265,7 +237,7 @@ local titleCorner = Instance.new("UICorner")
 titleCorner.CornerRadius = UDim.new(0, 8)
 titleCorner.Parent = title
 
--- Кнопка закрытия
+-- Кнопка закрытия меню
 local closeBtn = Instance.new("TextButton")
 closeBtn.Name = "CloseBtn"
 closeBtn.Size = UDim2.new(0, 20, 0, 20)
@@ -283,7 +255,7 @@ closeCorner.CornerRadius = UDim.new(0, 4)
 closeCorner.Parent = closeBtn
 
 -- ============================================
--- Чекбокс
+-- Функция чекбокса
 -- ============================================
 local function CreateCheckbox(name, text, defaultValue, callback, order)
     local frame = Instance.new("Frame")
@@ -319,6 +291,7 @@ local function CreateCheckbox(name, text, defaultValue, callback, order)
     label.Parent = frame
 
     local state = defaultValue
+
     button.MouseButton1Click:Connect(function()
         state = not state
         button.BackgroundColor3 = state and Color3.fromRGB(0, 200, 0) or Color3.fromRGB(80, 80, 80)
@@ -326,14 +299,25 @@ local function CreateCheckbox(name, text, defaultValue, callback, order)
     end)
 end
 
-CreateCheckbox("ESP", "Включить ESP", SETTINGS.Enabled, function(s) SETTINGS.Enabled = s end, 0)
-CreateCheckbox("Box", "Показывать бокс", SETTINGS.ShowBox, function(s) SETTINGS.ShowBox = s end, 1)
-CreateCheckbox("Name", "Показывать ник", SETTINGS.ShowName, function(s) SETTINGS.ShowName = s end, 2)
-CreateCheckbox("Health", "Показывать ХП", SETTINGS.ShowHealth, function(s) SETTINGS.ShowHealth = s end, 3)
-CreateCheckbox("Distance", "Показывать дистанцию", SETTINGS.ShowDistance, function(s) SETTINGS.ShowDistance = s end, 4)
+-- Чекбоксы
+CreateCheckbox("ESP", "Включить ESP", SETTINGS.Enabled, function(state)
+    SETTINGS.Enabled = state
+end, 0)
+
+CreateCheckbox("Name", "Показывать ник", SETTINGS.ShowName, function(state)
+    SETTINGS.ShowName = state
+end, 1)
+
+CreateCheckbox("Health", "Показывать ХП", SETTINGS.ShowHealth, function(state)
+    SETTINGS.ShowHealth = state
+end, 2)
+
+CreateCheckbox("Distance", "Показывать дистанцию", SETTINGS.ShowDistance, function(state)
+    SETTINGS.ShowDistance = state
+end, 3)
 
 -- ============================================
--- Открытие / закрытие
+-- Открытие / закрытие меню
 -- ============================================
 openBtn.MouseButton1Click:Connect(function()
     mainFrame.Visible = not mainFrame.Visible
@@ -343,12 +327,4 @@ closeBtn.MouseButton1Click:Connect(function()
     mainFrame.Visible = false
 end)
 
--- Горячая клавиша X
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    if gameProcessed then return end
-    if input.KeyCode == Enum.KeyCode.X then
-        mainFrame.Visible = not mainFrame.Visible
-    end
-end)
-
-print("[ESP] Скрипт с GUI и хоткеем X загружен")
+print("[ESP] Скрипт с GUI успешно загружен")
