@@ -1,5 +1,5 @@
 -- ============================================
--- Свой ESP для Xeno
+-- ESP через BillboardGui (безопасный, не крашит)
 -- ============================================
 
 local Players = game:GetService("Players")
@@ -15,175 +15,156 @@ local SETTINGS = {
     ShowDistance = true,
     BoxColor = Color3.fromRGB(0, 255, 0),
     TextColor = Color3.fromRGB(255, 255, 255),
-    HealthColor = Color3.fromRGB(0, 255, 0),
-    MaxDistance = 1000, -- не показывать дальше этого
+    MaxDistance = 1000,
 }
 
--- Хранилище для drawing-объектов каждого игрока
+-- Хранилище
 local ESPObjects = {}
 
 -- ============================================
--- Создание объектов Drawing
+-- Создание ESP для игрока
 -- ============================================
 local function CreateESP(player)
     if player == LocalPlayer then return end
-
-    local drawings = {
-        Box = Drawing.new("Square"),
-        Name = Drawing.new("Text"),
-        HealthBg = Drawing.new("Square"),
-        HealthBar = Drawing.new("Square"),
-        Distance = Drawing.new("Text"),
+    
+    local drawings = {}
+    
+    -- Создаём BillboardGui
+    local billboard = Instance.new("BillboardGui")
+    billboard.Name = "ESP_Billboard"
+    billboard.AlwaysOnTop = true
+    billboard.Size = UDim2.new(0, 100, 0, 50)
+    billboard.StudsOffset = Vector3.new(0, 3, 0)
+    billboard.Adornee = nil
+    billboard.Parent = game:GetService("CoreGui")
+    
+    -- Имя
+    local nameLabel = Instance.new("TextLabel")
+    nameLabel.Name = "NameLabel"
+    nameLabel.Size = UDim2.new(1, 0, 0, 16)
+    nameLabel.Position = UDim2.new(0, 0, 0, 0)
+    nameLabel.BackgroundTransparency = 1
+    nameLabel.TextColor3 = SETTINGS.TextColor
+    nameLabel.TextStrokeTransparency = 0
+    nameLabel.TextSize = 14
+    nameLabel.Font = Enum.Font.SourceSansBold
+    nameLabel.Text = ""
+    nameLabel.Parent = billboard
+    
+    -- ХП
+    local healthBar = Instance.new("Frame")
+    healthBar.Name = "HealthBar"
+    healthBar.Size = UDim2.new(0, 50, 0, 6)
+    healthBar.Position = UDim2.new(0.5, -25, 0, 18)
+    healthBar.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+    healthBar.BorderSizePixel = 0
+    healthBar.Parent = billboard
+    
+    local healthBg = Instance.new("Frame")
+    healthBg.Name = "HealthBg"
+    healthBg.Size = UDim2.new(0, 52, 0, 8)
+    healthBg.Position = UDim2.new(0.5, -26, 0, 17)
+    healthBg.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    healthBg.BorderSizePixel = 0
+    healthBg.ZIndex = 0
+    healthBg.Parent = billboard
+    
+    -- Дистанция
+    local distLabel = Instance.new("TextLabel")
+    distLabel.Name = "DistLabel"
+    distLabel.Size = UDim2.new(1, 0, 0, 14)
+    distLabel.Position = UDim2.new(0, 0, 0, 28)
+    distLabel.BackgroundTransparency = 1
+    distLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+    distLabel.TextStrokeTransparency = 0
+    distLabel.TextSize = 12
+    distLabel.Font = Enum.Font.SourceSans
+    distLabel.Text = ""
+    distLabel.Parent = billboard
+    
+    ESPObjects[player] = {
+        Billboard = billboard,
+        NameLabel = nameLabel,
+        HealthBar = healthBar,
+        HealthBg = healthBg,
+        DistLabel = distLabel,
     }
-
-    -- Настройка бокса
-    drawings.Box.Thickness = 1
-    drawings.Box.Filled = false
-    drawings.Box.Color = SETTINGS.BoxColor
-    drawings.Box.Transparency = 1
-
-    -- Настройка имени
-    drawings.Name.Size = 14
-    drawings.Name.Center = true
-    drawings.Name.Outline = true
-    drawings.Name.Color = SETTINGS.TextColor
-    drawings.Name.Font = 2 -- 0 = UI, 1 = System, 2 = Plex, 3 = Monospace
-
-    -- Настройка фона ХП
-    drawings.HealthBg.Filled = true
-    drawings.HealthBg.Color = Color3.fromRGB(0, 0, 0)
-    drawings.HealthBg.Transparency = 0.5
-
-    -- Настройка полоски ХП
-    drawings.HealthBar.Filled = true
-    drawings.HealthBar.Color = SETTINGS.HealthColor
-    drawings.HealthBar.Transparency = 1
-
-    -- Настройка дистанции
-    drawings.Distance.Size = 12
-    drawings.Distance.Center = true
-    drawings.Distance.Outline = true
-    drawings.Distance.Color = Color3.fromRGB(200, 200, 200)
-    drawings.Distance.Font = 2
-
-    ESPObjects[player] = drawings
 end
 
 -- ============================================
--- Удаление объектов при выходе игрока
+-- Удаление ESP
 -- ============================================
 local function RemoveESP(player)
-    local drawings = ESPObjects[player]
-    if not drawings then return end
-
-    for _, obj in pairs(drawings) do
-        obj:Remove()
+    local data = ESPObjects[player]
+    if not data then return end
+    
+    if data.Billboard then
+        data.Billboard:Destroy()
     end
     ESPObjects[player] = nil
 end
 
 -- ============================================
--- Основной цикл обновления
+-- Обновление
 -- ============================================
 local function UpdateESP()
-    for player, drawings in pairs(ESPObjects) do
+    for player, data in pairs(ESPObjects) do
         local character = player.Character
         local humanoid = character and character:FindFirstChild("Humanoid")
         local rootPart = character and character:FindFirstChild("HumanoidRootPart")
-
-        -- Если персонажа нет или он мёртв — скрываем
-        if not character or not humanoid or not rootPart or humanoid.Health <= 0 then
-            for _, obj in pairs(drawings) do
-                obj.Visible = false
+        local head = character and character:FindFirstChild("Head")
+        
+        if not character or not humanoid or not rootPart or not head or humanoid.Health <= 0 then
+            if data.Billboard then
+                data.Billboard.Enabled = false
             end
             continue
         end
-
-        -- Позиция на экране
-        local screenPos, onScreen = Camera:WorldToViewportPoint(rootPart.Position)
+        
         local distance = (Camera.CFrame.Position - rootPart.Position).Magnitude
-
-        -- Если далеко или за экраном — скрываем
-        if not onScreen or distance > SETTINGS.MaxDistance then
-            for _, obj in pairs(drawings) do
-                obj.Visible = false
-            end
+        
+        if distance > SETTINGS.MaxDistance then
+            data.Billboard.Enabled = false
             continue
         end
-
-        -- ============================================
-        -- Рассчёт размеров бокса
-        -- ============================================
-        local head = character:FindFirstChild("Head")
-        local humanoidRootPart = rootPart
-
-        if head then
-            -- Верх и низ персонажа в мировых координатах
-            local topPos = head.Position + Vector3.new(0, 1, 0)
-            local bottomPos = humanoidRootPart.Position - Vector3.new(0, 3, 0)
-
-            local topScreen, topOnScreen = Camera:WorldToViewportPoint(topPos)
-            local bottomScreen, bottomOnScreen = Camera:WorldToViewportPoint(bottomPos)
-
-            if topOnScreen and bottomOnScreen then
-                local height = math.abs(topScreen.Y - bottomScreen.Y)
-                local width = height * 0.6 -- соотношение сторон
-                local x = screenPos.X - width / 2
-                local y = topScreen.Y
-                local centerX = screenPos.X
-                local centerY = topScreen.Y
-
-                -- Бокс
-                if SETTINGS.ShowBox then
-                    drawings.Box.Size = Vector2.new(width, height)
-                    drawings.Box.Position = Vector2.new(x, y)
-                    drawings.Box.Visible = true
-                end
-
-                -- Имя
-                if SETTINGS.ShowName then
-                    drawings.Name.Text = player.Name .. " [" .. math.floor(distance) .. "m]"
-                    drawings.Name.Position = Vector2.new(centerX, y - 16)
-                    drawings.Name.Visible = true
-                end
-
-                -- Полоска ХП
-                if SETTINGS.ShowHealth then
-                    local healthPercent = humanoid.Health / humanoid.MaxHealth
-                    local barHeight = height
-                    local barWidth = 4
-
-                    -- Фон
-                    drawings.HealthBg.Size = Vector2.new(barWidth + 2, barHeight + 2)
-                    drawings.HealthBg.Position = Vector2.new(x - barWidth - 4, y - 1)
-                    drawings.HealthBg.Visible = true
-
-                    -- Заполнение
-                    local filledHeight = barHeight * healthPercent
-                    drawings.HealthBar.Size = Vector2.new(barWidth, filledHeight)
-                    drawings.HealthBar.Position = Vector2.new(
-                        x - barWidth - 3,
-                        y + (barHeight - filledHeight)
-                    )
-
-                    -- Цвет в зависимости от ХП
-                    if healthPercent > 0.5 then
-                        drawings.HealthBar.Color = Color3.fromRGB(0, 255, 0)
-                    elseif healthPercent > 0.25 then
-                        drawings.HealthBar.Color = Color3.fromRGB(255, 255, 0)
-                    else
-                        drawings.HealthBar.Color = Color3.fromRGB(255, 0, 0)
-                    end
-                    drawings.HealthBar.Visible = true
-                end
-
-                -- Дистанция
-                if SETTINGS.ShowDistance then
-                    drawings.Distance.Text = math.floor(distance) .. "m"
-                    drawings.Distance.Position = Vector2.new(centerX, y + height + 4)
-                    drawings.Distance.Visible = true
-                end
+        
+        -- Привязываем к голове
+        data.Billboard.Adornee = head
+        data.Billboard.Enabled = true
+        
+        -- Имя
+        if SETTINGS.ShowName then
+            data.NameLabel.Text = player.Name
+            data.NameLabel.Visible = true
+        else
+            data.NameLabel.Visible = false
+        end
+        
+        -- ХП
+        if SETTINGS.ShowHealth then
+            local healthPercent = humanoid.Health / humanoid.MaxHealth
+            data.HealthBar.Size = UDim2.new(healthPercent, 0, 0, 6)
+            data.HealthBar.Visible = true
+            data.HealthBg.Visible = true
+            
+            if healthPercent > 0.5 then
+                data.HealthBar.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+            elseif healthPercent > 0.25 then
+                data.HealthBar.BackgroundColor3 = Color3.fromRGB(255, 255, 0)
+            else
+                data.HealthBar.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
             end
+        else
+            data.HealthBar.Visible = false
+            data.HealthBg.Visible = false
+        end
+        
+        -- Дистанция
+        if SETTINGS.ShowDistance then
+            data.DistLabel.Text = math.floor(distance) .. "m"
+            data.DistLabel.Visible = true
+        else
+            data.DistLabel.Visible = false
         end
     end
 end
@@ -198,7 +179,6 @@ end
 Players.PlayerAdded:Connect(CreateESP)
 Players.PlayerRemoving:Connect(RemoveESP)
 
--- Обновление каждый кадр
 RunService.RenderStepped:Connect(UpdateESP)
 
 print("[ESP] Загружен. Игроков: " .. #Players:GetPlayers())
